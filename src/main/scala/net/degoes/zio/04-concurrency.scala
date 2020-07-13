@@ -16,7 +16,11 @@ object ForkJoin extends App {
    * and finally, print out a message "Joined".
    */
   def run(args: List[String]): ZIO[ZEnv, Nothing, ExitCode] =
-    printer.exitCode
+    printer.fork.flatMap(fiber => 
+      putStrLn("Forked")  *> 
+      fiber.join          *> 
+      putStrLn("Joined")
+    ).exitCode
 }
 
 object ForkInterrupt extends App {
@@ -35,7 +39,12 @@ object ForkInterrupt extends App {
    * finally, print out a message "Interrupted".
    */
   def run(args: List[String]): ZIO[ZEnv, Nothing, ExitCode] =
-    (infinitePrinter *> ZIO.sleep(10.millis)).exitCode
+    infinitePrinter.fork.flatMap(fiber => 
+      putStrLn("Forked")    *>
+      ZIO.sleep(10.millis)  *> 
+      fiber.interrupt       *>
+      putStrLn("Interrupted")
+    ).exitCode
 }
 
 object ParallelFib extends App {
@@ -47,14 +56,14 @@ object ParallelFib extends App {
    * Rewrite this implementation to compute nth fibonacci number in parallel.
    */
   def fib(n: Int): UIO[BigInt] = {
-    def loop(n: Int, original: Int): UIO[BigInt] =
+    def loop(n: Int): UIO[BigInt] =
       if (n <= 1) UIO(n)
       else
         UIO.effectSuspendTotal {
-          (loop(n - 1, original) zipWith loop(n - 2, original))(_ + _)
+          (loop(n - 1) zipWithPar loop(n - 2))(_ + _)
         }
 
-    loop(n, n)
+    loop(n)
   }
 
   def run(args: List[String]): ZIO[ZEnv, Nothing, ExitCode] =
@@ -99,8 +108,15 @@ object AlarmAppImproved extends App {
    * prints a dot every second that the alarm is sleeping for, and then
    * prints out a wakeup alarm message, like "Time to wakeup!!!".
    */
-  def run(args: List[String]): ZIO[ZEnv, Nothing, ExitCode] =
-    ???
+  def run(args: List[String]): ZIO[ZEnv, Nothing, ExitCode] = (for {
+    _         <- putStrLn("Number of seconds to sleep:")
+    toSleep   <- getStrLn
+    sleeping  <- ZIO.sleep(toSleep.toLong.seconds).fork
+    printing  <- (putStrLn(".") *> ZIO.sleep(1.second)).forever.fork
+    _         <- sleeping.join
+    _         <- printing.interrupt
+    _         <- putStrLn("Time to wakeup!!!")
+  } yield ()).exitCode
 }
 
 object ComputePi extends App {
